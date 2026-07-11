@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2014-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -14,6 +15,7 @@ import org.whispersystems.libsignal.kdf.HKDFv3;
 import org.whispersystems.libsignal.protocol.CiphertextMessage;
 import org.whispersystems.libsignal.state.SessionState;
 import org.whispersystems.libsignal.util.ByteUtil;
+import org.whispersystems.libsignal.util.Hex;
 import org.whispersystems.libsignal.util.Pair;
 import org.whispersystems.libsignal.util.guava.Optional;
 
@@ -55,7 +57,7 @@ public class RatchetingSession {
       throws InvalidKeyException
   {
     try {
-      sessionState.setSessionVersion(CiphertextMessage.CURRENT_VERSION);
+      if (sessionState.getSessionVersion() < CiphertextMessage.CURRENT_VERSION) sessionState.setSessionVersion(CiphertextMessage.CURRENT_VERSION);
       sessionState.setRemoteIdentityKey(parameters.getTheirIdentityKey());
       sessionState.setLocalIdentityKey(parameters.getOurIdentityKey().getPublicKey());
 
@@ -76,12 +78,13 @@ public class RatchetingSession {
                                                parameters.getOurBaseKey().getPrivateKey()));
       }
 
-      DerivedKeys             derivedKeys  = calculateDerivedKeys(secrets.toByteArray());
-      Pair<RootKey, ChainKey> sendingChain = derivedKeys.getRootKey().createChain(parameters.getTheirRatchetKey(), sendingRatchetKey);
+      DerivedKeys             derivedKeys  = calculateDerivedKeys(secrets.toByteArray(), sessionState.getSessionVersion() == 4);
+      Pair<RootKey, ChainKey> sendingChain = derivedKeys.getRootKey().createChain(parameters.getTheirRatchetKey(), sendingRatchetKey, sessionState.getSessionVersion() == 4);
 
       sessionState.addReceiverChain(parameters.getTheirRatchetKey(), derivedKeys.getChainKey());
       sessionState.setSenderChain(sendingRatchetKey, sendingChain.second());
       sessionState.setRootKey(sendingChain.first());
+      sessionState.setLocalIsAlice(true);
     } catch (IOException e) {
       throw new AssertionError(e);
     }
@@ -92,7 +95,7 @@ public class RatchetingSession {
   {
 
     try {
-      sessionState.setSessionVersion(CiphertextMessage.CURRENT_VERSION);
+      if (sessionState.getSessionVersion() < CiphertextMessage.CURRENT_VERSION) sessionState.setSessionVersion(CiphertextMessage.CURRENT_VERSION);
       sessionState.setRemoteIdentityKey(parameters.getTheirIdentityKey());
       sessionState.setLocalIdentityKey(parameters.getOurIdentityKey().getPublicKey());
 
@@ -112,10 +115,11 @@ public class RatchetingSession {
                                                parameters.getOurOneTimePreKey().get().getPrivateKey()));
       }
 
-      DerivedKeys derivedKeys = calculateDerivedKeys(secrets.toByteArray());
+      DerivedKeys derivedKeys = calculateDerivedKeys(secrets.toByteArray(), sessionState.getSessionVersion() == 4);
 
       sessionState.setSenderChain(parameters.getOurRatchetKey(), derivedKeys.getChainKey());
       sessionState.setRootKey(derivedKeys.getRootKey());
+      sessionState.setLocalIsAlice(false);
     } catch (IOException e) {
       throw new AssertionError(e);
     }
@@ -127,9 +131,9 @@ public class RatchetingSession {
     return discontinuity;
   }
 
-  private static DerivedKeys calculateDerivedKeys(byte[] masterSecret) {
+  private static DerivedKeys calculateDerivedKeys(byte[] masterSecret, boolean version2) {
     HKDF     kdf                = new HKDFv3();
-    byte[]   derivedSecretBytes = kdf.deriveSecrets(masterSecret, "WhisperText".getBytes(), 64);
+    byte[]   derivedSecretBytes = kdf.deriveSecrets(masterSecret, (version2 ? "OMEMO X3DH" : "WhisperText").getBytes(), 64);
     byte[][] derivedSecrets     = ByteUtil.split(derivedSecretBytes, 32, 32);
 
     return new DerivedKeys(new RootKey(kdf, derivedSecrets[0]),

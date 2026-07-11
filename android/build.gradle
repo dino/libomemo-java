@@ -1,7 +1,7 @@
 buildscript {
     repositories {
-        google()
         mavenCentral()
+        google()
         jcenter {
             content {
                 includeVersion 'org.jetbrains.trove4j', 'trove4j', '20160824'
@@ -10,124 +10,106 @@ buildscript {
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:3.5.1'
+        classpath 'com.android.tools.build:gradle:8.13.2'
     }
 }
 
 apply plugin: 'com.android.library'
-apply plugin: 'maven'
+apply plugin: 'maven-publish'
 apply plugin: 'signing'
 
-archivesBaseName = "signal-protocol-android"
+archivesBaseName = "omemo-android"
 version          = version_number
 group            = group_info
+description      = 'OMEMO library for Android'
 
 android {
+    namespace 'im.dino.omemo'
     compileSdkVersion 28
-    buildToolsVersion '28.0.3'
+    buildToolsVersion '35.0.0'
 
     defaultConfig {
-        minSdkVersion 19
+        minSdkVersion 21
         targetSdkVersion 28
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_7
-        targetCompatibility JavaVersion.VERSION_1_7
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 
-    sourceSets {
-        androidTest {
-            java.srcDirs = ['src/androidTest/java', project(':tests').file('src/test/java')]
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+            withJavadocJar()
         }
     }
 }
 
 repositories {
-    google()
     mavenCentral()
-    mavenLocal()
-    jcenter {
-        content {
-            includeVersion 'org.jetbrains.trove4j', 'trove4j', '20160824'
-        }
-    }
+    google()
 }
 
 dependencies {
-    compile "org.whispersystems:curve25519-android:${curve25519_version}"
-    compile (project(':java')) {
-        exclude group: 'org.whispersystems', module: 'curve25519-java'
+    api "im.dino:curve25519-android:${curve25519_version}"
+    api (project(':java')) {
+        exclude group: 'im.dino', module: 'curve25519-java'
     }
+
+    androidTestImplementation (project(":tests"))
+    androidTestImplementation "androidx.test:runner:1.2.0"
 }
 
-def isReleaseBuild() {
-    return version.contains("SNAPSHOT") == false
-}
-
-def getReleaseRepositoryUrl() {
-    return hasProperty('sonatypeRepo') ? sonatypeRepo
-            : "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
-}
-
-def getRepositoryUsername() {
-    return hasProperty('whisperSonatypeUsername') ? whisperSonatypeUsername : ""
-}
-
-def getRepositoryPassword() {
-    return hasProperty('whisperSonatypePassword') ? whisperSonatypePassword : ""
-}
-
-signing {
-    required { isReleaseBuild() && gradle.taskGraph.hasTask("uploadArchives") }
-    sign configurations.archives
-}
-
-uploadArchives {
-    configuration = configurations.archives
-    repositories.mavenDeployer {
-        beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
-
-        repository(url: getReleaseRepositoryUrl()) {
-            authentication(userName: getRepositoryUsername(), password: getRepositoryPassword())
-        }
-
-        pom.project {
-            name 'signal-protocol-android'
-            packaging 'aar'
-            description 'Signal Protocol cryptography library for Android'
-            url 'https://github.com/WhisperSystems/libsignal-android'
-
-            scm {
-                url 'scm:git@github.com:WhisperSystems/libsignal-android.git'
-                connection 'scm:git@github.com:WhisperSystems/libsignal-android.git'
-                developerConnection 'scm:git@github.com:WhisperSystems/libsignal-android.git'
-            }
-
-            licenses {
-                license {
-                    name 'GPLv3'
-                    url 'https://www.gnu.org/licenses/gpl-3.0.txt'
-                    distribution 'repo'
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                artifactId = 'omemo-android'
+                pom {
+                    name = 'omemo-android'
+                    description = project.description
+                    url = 'https://github.com/dino/libomemo-java'
+                    licenses {
+                        license {
+                            name = 'GNU General Public License, Version 3'
+                            url = 'https://www.gnu.org/licenses/gpl-3.0.txt'
+                        }
+                    }
+                    developers {
+                        developer {
+                            id = 'dino'
+                            name = 'Dino Team'
+                        }
+                    }
+                    scm {
+                        url = 'https://github.com/dino/libomemo-java'
+                        connection = 'scm:git:https://github.com/dino/libomemo-java.git'
+                        developerConnection = 'scm:git:ssh://github.com/dino/libomemo-java.git'
+                    }
                 }
-            }
 
-            developers {
-                developer {
-                    name 'Moxie Marlinspike'
+                from components.release
+            }
+        }
+        if (project.hasProperty('maven.central.username')) {
+            repositories {
+                maven {
+                    name = 'mavenCentral'
+                    url = 'https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/'
+                    credentials {
+                        username project.getProperty('maven.central.username')
+                        password project.getProperty('maven.central.password')
+                    }
                 }
             }
         }
     }
-}
-
-task installArchives(type: Upload) {
-    description "Installs the artifacts to the local Maven repository."
-    configuration = configurations['archives']
-    repositories {
-        mavenDeployer {
-            repository url: "file://${System.properties['user.home']}/.m2/repository"
+    if (project.hasProperty('signing.gnupg.keyName')) {
+        signing {
+            useGpgCmd()
+            sign publishing.publications
         }
     }
+    tasks.getByPath("sourceReleaseJar").duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
-

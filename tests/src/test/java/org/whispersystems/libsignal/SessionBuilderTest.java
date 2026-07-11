@@ -95,7 +95,7 @@ public class SessionBuilderTest extends TestCase {
     byte[] alicePlaintext = aliceSessionCipher.decrypt(new SignalMessage(bobOutgoingMessage.serialize()));
     assertTrue(new String(alicePlaintext).equals(originalMessage));
 
-    runInteraction(aliceStore, bobStore);
+    runInteraction(aliceStore, bobStore, false);
 
     aliceStore          = new TestInMemorySignalProtocolStore();
     aliceSessionBuilder = new SessionBuilder(aliceStore, BOB_ADDRESS);
@@ -129,6 +129,106 @@ public class SessionBuilderTest extends TestCase {
                                  31337, Curve.generateKeyPair().getPublicKey(),
                                  23, bobSignedPreKeyPair.getPublicKey(), bobSignedPreKeySignature,
                                  aliceStore.getIdentityKeyPair().getPublicKey());
+
+    try {
+      aliceSessionBuilder.process(bobPreKey);
+      throw new AssertionError("shoulnd't be trusted!");
+    } catch (UntrustedIdentityException uie) {
+      // good
+    }
+  }
+
+  public void testBasicPreKeyOmemo2()
+          throws InvalidKeyException, InvalidVersionException, InvalidMessageException, InvalidKeyIdException, DuplicateMessageException, LegacyMessageException, UntrustedIdentityException, NoSessionException {
+    SignalProtocolStore aliceStore          = new TestInMemorySignalProtocolStore();
+    SessionBuilder aliceSessionBuilder = new SessionBuilder(aliceStore, BOB_ADDRESS);
+    aliceSessionBuilder.setVersion(4);
+
+    final SignalProtocolStore bobStore                 = new TestInMemorySignalProtocolStore();
+    ECKeyPair    bobPreKeyPair            = Curve.generateKeyPair();
+    ECKeyPair    bobSignedPreKeyPair      = Curve.generateKeyPair();
+    byte[]       bobSignedPreKeySignature = Curve.calculateSignature(bobStore.getIdentityKeyPair().getPrivateKey(),
+            bobSignedPreKeyPair.getPublicKey().serialize());
+    byte[]       bobSignedPreKeySignature2 = Curve.calculateSignature(bobStore.getIdentityKeyPair().getPrivateKey(),
+            bobSignedPreKeyPair.getPublicKey().serialize2());
+
+    PreKeyBundle bobPreKey = new PreKeyBundle(bobStore.getLocalRegistrationId(), 1,
+            31337, bobPreKeyPair.getPublicKey(),
+            22, bobSignedPreKeyPair.getPublicKey(),
+            bobSignedPreKeySignature2,
+            bobStore.getIdentityKeyPair().getPublicKey());
+
+    aliceSessionBuilder.process(bobPreKey);
+
+    assertTrue(aliceStore.containsSession(BOB_ADDRESS));
+    assertTrue(aliceStore.loadSession(BOB_ADDRESS, 4).getSessionState().getSessionVersion() == 4);
+
+    final String            originalMessage    = "L'homme est condamné à être libre";
+    SessionCipher     aliceSessionCipher = new SessionCipher(aliceStore, BOB_ADDRESS);
+    aliceSessionCipher.setVersion(4);
+    CiphertextMessage outgoingMessage    = aliceSessionCipher.encrypt(originalMessage.getBytes());
+
+    assertTrue(outgoingMessage.getType() == CiphertextMessage.PREKEY_TYPE);
+
+    PreKeySignalMessage incomingMessage = new PreKeySignalMessage(outgoingMessage.serialize(), bobStore.getLocalRegistrationId());
+    bobStore.storePreKey(31337, new PreKeyRecord(bobPreKey.getPreKeyId(), bobPreKeyPair));
+    bobStore.storeSignedPreKey(22, new SignedPreKeyRecord(22, System.currentTimeMillis(), bobSignedPreKeyPair, bobSignedPreKeySignature, bobSignedPreKeySignature2));
+
+    SessionCipher bobSessionCipher = new SessionCipher(bobStore, ALICE_ADDRESS);
+    bobSessionCipher.setVersion(4);
+    byte[] plaintext = bobSessionCipher.decrypt(incomingMessage, new DecryptionCallback() {
+      @Override
+      public void handlePlaintext(byte[] plaintext) {
+        assertTrue(originalMessage.equals(new String(plaintext)));
+        assertFalse(bobStore.containsSession(ALICE_ADDRESS));
+      }
+    });
+
+    assertTrue(bobStore.containsSession(ALICE_ADDRESS));
+    assertTrue(bobStore.loadSession(ALICE_ADDRESS).getSessionState().getSessionVersion() == 4);
+    assertTrue(bobStore.loadSession(ALICE_ADDRESS).getSessionState().getAliceBaseKey() != null);
+    assertTrue(originalMessage.equals(new String(plaintext)));
+
+    CiphertextMessage bobOutgoingMessage = bobSessionCipher.encrypt(originalMessage.getBytes());
+    assertTrue(bobOutgoingMessage.getType() == CiphertextMessage.WHISPER_TYPE);
+
+    byte[] alicePlaintext = aliceSessionCipher.decrypt(new SignalMessage(bobOutgoingMessage.serialize(), true));
+    assertTrue(new String(alicePlaintext).equals(originalMessage));
+
+    runInteraction(aliceStore, bobStore, true);
+
+    aliceStore          = new TestInMemorySignalProtocolStore();
+    aliceSessionBuilder = new SessionBuilder(aliceStore, BOB_ADDRESS);
+    aliceSessionCipher  = new SessionCipher(aliceStore, BOB_ADDRESS);
+
+    bobPreKeyPair            = Curve.generateKeyPair();
+    bobSignedPreKeyPair      = Curve.generateKeyPair();
+    bobSignedPreKeySignature = Curve.calculateSignature(bobStore.getIdentityKeyPair().getPrivateKey(), bobSignedPreKeyPair.getPublicKey().serialize());
+    bobPreKey = new PreKeyBundle(bobStore.getLocalRegistrationId(),
+            1, 31338, bobPreKeyPair.getPublicKey(),
+            23, bobSignedPreKeyPair.getPublicKey(), bobSignedPreKeySignature,
+            bobStore.getIdentityKeyPair().getPublicKey());
+
+    bobStore.storePreKey(31338, new PreKeyRecord(bobPreKey.getPreKeyId(), bobPreKeyPair));
+    bobStore.storeSignedPreKey(23, new SignedPreKeyRecord(23, System.currentTimeMillis(), bobSignedPreKeyPair, bobSignedPreKeySignature));
+    aliceSessionBuilder.process(bobPreKey);
+
+    outgoingMessage = aliceSessionCipher.encrypt(originalMessage.getBytes());
+
+    try {
+      plaintext = bobSessionCipher.decrypt(new PreKeySignalMessage(outgoingMessage.serialize()));
+      throw new AssertionError("shouldn't be trusted!");
+    } catch (UntrustedIdentityException uie) {
+      bobStore.saveIdentity(ALICE_ADDRESS, new PreKeySignalMessage(outgoingMessage.serialize()).getIdentityKey());
+    }
+
+    plaintext = bobSessionCipher.decrypt(new PreKeySignalMessage(outgoingMessage.serialize()));
+    assertTrue(new String(plaintext).equals(originalMessage));
+
+    bobPreKey = new PreKeyBundle(bobStore.getLocalRegistrationId(), 1,
+            31337, Curve.generateKeyPair().getPublicKey(),
+            23, bobSignedPreKeyPair.getPublicKey(), bobSignedPreKeySignature,
+            aliceStore.getIdentityKeyPair().getPublicKey());
 
     try {
       aliceSessionBuilder.process(bobPreKey);
@@ -356,7 +456,7 @@ public class SessionBuilderTest extends TestCase {
   }
 
 
-  private void runInteraction(SignalProtocolStore aliceStore, SignalProtocolStore bobStore)
+  private void runInteraction(SignalProtocolStore aliceStore, SignalProtocolStore bobStore, boolean version2)
       throws DuplicateMessageException, LegacyMessageException, InvalidMessageException, NoSessionException, UntrustedIdentityException
   {
     SessionCipher aliceSessionCipher = new SessionCipher(aliceStore, BOB_ADDRESS);
@@ -367,14 +467,14 @@ public class SessionBuilderTest extends TestCase {
 
     assertTrue(aliceMessage.getType() == CiphertextMessage.WHISPER_TYPE);
 
-    byte[] plaintext = bobSessionCipher.decrypt(new SignalMessage(aliceMessage.serialize()));
+    byte[] plaintext = bobSessionCipher.decrypt(new SignalMessage(aliceMessage.serialize(), version2));
     assertTrue(new String(plaintext).equals(originalMessage));
 
     CiphertextMessage bobMessage = bobSessionCipher.encrypt(originalMessage.getBytes());
 
     assertTrue(bobMessage.getType() == CiphertextMessage.WHISPER_TYPE);
 
-    plaintext = aliceSessionCipher.decrypt(new SignalMessage(bobMessage.serialize()));
+    plaintext = aliceSessionCipher.decrypt(new SignalMessage(bobMessage.serialize(), version2));
     assertTrue(new String(plaintext).equals(originalMessage));
 
     for (int i=0;i<10;i++) {
@@ -383,7 +483,7 @@ public class SessionBuilderTest extends TestCase {
                                "surges up in the world--and defines himself aftward. " + i);
       CiphertextMessage aliceLoopingMessage = aliceSessionCipher.encrypt(loopingMessage.getBytes());
 
-      byte[] loopingPlaintext = bobSessionCipher.decrypt(new SignalMessage(aliceLoopingMessage.serialize()));
+      byte[] loopingPlaintext = bobSessionCipher.decrypt(new SignalMessage(aliceLoopingMessage.serialize(), version2));
       assertTrue(new String(loopingPlaintext).equals(loopingMessage));
     }
 
@@ -393,7 +493,7 @@ public class SessionBuilderTest extends TestCase {
                                "surges up in the world--and defines himself aftward. " + i);
       CiphertextMessage bobLoopingMessage = bobSessionCipher.encrypt(loopingMessage.getBytes());
 
-      byte[] loopingPlaintext = aliceSessionCipher.decrypt(new SignalMessage(bobLoopingMessage.serialize()));
+      byte[] loopingPlaintext = aliceSessionCipher.decrypt(new SignalMessage(bobLoopingMessage.serialize(), version2));
       assertTrue(new String(loopingPlaintext).equals(loopingMessage));
     }
 
@@ -414,7 +514,7 @@ public class SessionBuilderTest extends TestCase {
                                "surges up in the world--and defines himself aftward. " + i);
       CiphertextMessage aliceLoopingMessage = aliceSessionCipher.encrypt(loopingMessage.getBytes());
 
-      byte[] loopingPlaintext = bobSessionCipher.decrypt(new SignalMessage(aliceLoopingMessage.serialize()));
+      byte[] loopingPlaintext = bobSessionCipher.decrypt(new SignalMessage(aliceLoopingMessage.serialize(), version2));
       assertTrue(new String(loopingPlaintext).equals(loopingMessage));
     }
 
@@ -422,12 +522,12 @@ public class SessionBuilderTest extends TestCase {
       String loopingMessage = ("You can only desire based on what you know: " + i);
       CiphertextMessage bobLoopingMessage = bobSessionCipher.encrypt(loopingMessage.getBytes());
 
-      byte[] loopingPlaintext = aliceSessionCipher.decrypt(new SignalMessage(bobLoopingMessage.serialize()));
+      byte[] loopingPlaintext = aliceSessionCipher.decrypt(new SignalMessage(bobLoopingMessage.serialize(), version2));
       assertTrue(new String(loopingPlaintext).equals(loopingMessage));
     }
 
     for (Pair<String, CiphertextMessage> aliceOutOfOrderMessage : aliceOutOfOrderMessages) {
-      byte[] outOfOrderPlaintext = bobSessionCipher.decrypt(new SignalMessage(aliceOutOfOrderMessage.second().serialize()));
+      byte[] outOfOrderPlaintext = bobSessionCipher.decrypt(new SignalMessage(aliceOutOfOrderMessage.second().serialize(), version2));
       assertTrue(new String(outOfOrderPlaintext).equals(aliceOutOfOrderMessage.first()));
     }
   }

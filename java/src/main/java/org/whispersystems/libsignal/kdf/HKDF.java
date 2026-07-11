@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2013-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -21,6 +22,7 @@ public abstract class HKDF {
     switch (messageVersion) {
       case 2:  return new HKDFv2();
       case 3:  return new HKDFv3();
+      case 4:  return new HKDFv3();
       default: throw new AssertionError("Unknown version: " + messageVersion);
     }
   }

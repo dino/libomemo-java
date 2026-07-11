@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2014-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -74,8 +75,8 @@ public class InMemorySignalProtocolStore implements SignalProtocolStore {
   }
 
   @Override
-  public SessionRecord loadSession(SignalProtocolAddress address) {
-    return sessionStore.loadSession(address);
+  public SessionRecord loadSession(SignalProtocolAddress address, int preferredVersion) {
+    return sessionStore.loadSession(address, preferredVersion);
   }
 
   @Override

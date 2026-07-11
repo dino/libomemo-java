@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2014-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -28,11 +29,15 @@ public class RootKey {
     return key;
   }
 
-  public Pair<RootKey, ChainKey> createChain(ECPublicKey theirRatchetKey, ECKeyPair ourRatchetKey)
+  public Pair<RootKey, ChainKey> createChain(ECPublicKey theirRatchetKey, ECKeyPair ourRatchetKey) throws InvalidKeyException {
+    return createChain(theirRatchetKey, ourRatchetKey, false);
+  }
+
+  public Pair<RootKey, ChainKey> createChain(ECPublicKey theirRatchetKey, ECKeyPair ourRatchetKey, boolean version2)
       throws InvalidKeyException
   {
     byte[]             sharedSecret       = Curve.calculateAgreement(theirRatchetKey, ourRatchetKey.getPrivateKey());
-    byte[]             derivedSecretBytes = kdf.deriveSecrets(sharedSecret, key, "WhisperRatchet".getBytes(), DerivedRootSecrets.SIZE);
+    byte[]             derivedSecretBytes = kdf.deriveSecrets(sharedSecret, key, (version2 ? "OMEMO Root Chain" : "WhisperRatchet").getBytes(), DerivedRootSecrets.SIZE);
     DerivedRootSecrets derivedSecrets     = new DerivedRootSecrets(derivedSecretBytes);
 
     RootKey  newRootKey  = new RootKey(kdf, derivedSecrets.getRootKey());

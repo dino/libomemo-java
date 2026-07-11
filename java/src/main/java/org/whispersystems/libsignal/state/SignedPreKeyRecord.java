@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2014-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -31,6 +32,20 @@ public class SignedPreKeyRecord {
                                                 .setSignature(ByteString.copyFrom(signature))
                                                 .setTimestamp(timestamp)
                                                 .build();
+
+  }
+
+  public SignedPreKeyRecord(int id, long timestamp, ECKeyPair keyPair, byte[] signature, byte[] signature2) {
+    this.structure = SignedPreKeyRecordStructure.newBuilder()
+                                                .setId(id)
+                                                .setPublicKey(ByteString.copyFrom(keyPair.getPublicKey()
+                                                                                         .serialize()))
+                                                .setPrivateKey(ByteString.copyFrom(keyPair.getPrivateKey()
+                                                                                          .serialize()))
+                                                .setSignature(ByteString.copyFrom(signature))
+                                                .setSignature2(ByteString.copyFrom(signature2))
+                                                .setTimestamp(timestamp)
+                                                .build();
   }
 
   public SignedPreKeyRecord(byte[] serialized) throws IOException {
@@ -58,6 +73,10 @@ public class SignedPreKeyRecord {
 
   public byte[] getSignature() {
     return this.structure.getSignature().toByteArray();
+  }
+
+  public byte[] getSignature2() {
+    return this.structure.getSignature2().toByteArray();
   }
 
   public byte[] serialize() {

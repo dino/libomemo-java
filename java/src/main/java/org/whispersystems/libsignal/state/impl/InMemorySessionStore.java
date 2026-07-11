@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2014-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -22,12 +23,12 @@ public class InMemorySessionStore implements SessionStore {
   public InMemorySessionStore() {}
 
   @Override
-  public synchronized SessionRecord loadSession(SignalProtocolAddress remoteAddress) {
+  public synchronized SessionRecord loadSession(SignalProtocolAddress remoteAddress, int preferredVersion) {
     try {
       if (containsSession(remoteAddress)) {
         return new SessionRecord(sessions.get(remoteAddress));
       } else {
-        return new SessionRecord();
+        return new SessionRecord(preferredVersion);
       }
     } catch (IOException e) {
       throw new AssertionError(e);

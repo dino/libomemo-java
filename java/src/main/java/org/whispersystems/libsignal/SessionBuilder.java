@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2014-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -50,6 +51,7 @@ public class SessionBuilder {
   private final SignedPreKeyStore signedPreKeyStore;
   private final IdentityKeyStore  identityKeyStore;
   private final SignalProtocolAddress remoteAddress;
+  private int preferredVersion = 2;
 
   /**
    * Constructs a SessionBuilder.
@@ -79,6 +81,14 @@ public class SessionBuilder {
    */
   public SessionBuilder(SignalProtocolStore store, SignalProtocolAddress remoteAddress) {
     this(store, store, store, store, remoteAddress);
+  }
+
+  public int getVersion() {
+    return preferredVersion;
+  }
+
+  public void setVersion(int preferredVersion) {
+    this.preferredVersion = preferredVersion;
   }
 
   /**
@@ -170,7 +180,7 @@ public class SessionBuilder {
 
       if (preKey.getSignedPreKey() != null &&
           !Curve.verifySignature(preKey.getIdentityKey().getPublicKey(),
-                                 preKey.getSignedPreKey().serialize(),
+                                 preferredVersion < 4 ? preKey.getSignedPreKey().serialize() : preKey.getSignedPreKey().serialize2(),
                                  preKey.getSignedPreKeySignature()))
       {
         throw new InvalidKeyException("Invalid signature on device key!");
@@ -180,7 +190,7 @@ public class SessionBuilder {
         throw new InvalidKeyException("No signed prekey!");
       }
 
-      SessionRecord         sessionRecord        = sessionStore.loadSession(remoteAddress);
+      SessionRecord         sessionRecord        = sessionStore.loadSession(remoteAddress, preferredVersion);
       ECKeyPair             ourBaseKey           = Curve.generateKeyPair();
       ECPublicKey           theirSignedPreKey    = preKey.getSignedPreKey();
       Optional<ECPublicKey> theirOneTimePreKey   = Optional.fromNullable(preKey.getPreKey());

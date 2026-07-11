@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2014-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -91,10 +92,10 @@ public class SessionCipher {
    */
   public CiphertextMessage encrypt(byte[] paddedMessage) throws UntrustedIdentityException {
     synchronized (SESSION_LOCK) {
-      SessionRecord sessionRecord   = sessionStore.loadSession(remoteAddress);
+      SessionRecord sessionRecord   = sessionStore.loadSession(remoteAddress, sessionBuilder.getVersion());
       SessionState  sessionState    = sessionRecord.getSessionState();
       ChainKey      chainKey        = sessionState.getSenderChainKey();
-      MessageKeys   messageKeys     = chainKey.getMessageKeys();
+      MessageKeys   messageKeys     = chainKey.getMessageKeys(sessionState.getSessionVersion() >= 4);
       ECPublicKey   senderEphemeral = sessionState.getSenderRatchetKey();
       int           previousCounter = sessionState.getPreviousCounter();
       int           sessionVersion  = sessionState.getSessionVersion();
@@ -104,7 +105,8 @@ public class SessionCipher {
                                                               senderEphemeral, chainKey.getIndex(),
                                                               previousCounter, ciphertextBody,
                                                               sessionState.getLocalIdentityKey(),
-                                                              sessionState.getRemoteIdentityKey());
+                                                              sessionState.getRemoteIdentityKey(),
+                                                              sessionState.getLocalIsAlice());
 
       if (sessionState.hasUnacknowledgedPreKeyMessage()) {
         UnacknowledgedPreKeyMessageItems items = sessionState.getUnacknowledgedPreKeyMessageItems();
@@ -176,7 +178,7 @@ public class SessionCipher {
              InvalidKeyIdException, InvalidKeyException, UntrustedIdentityException
   {
     synchronized (SESSION_LOCK) {
-      SessionRecord     sessionRecord    = sessionStore.loadSession(remoteAddress);
+      SessionRecord     sessionRecord    = sessionStore.loadSession(remoteAddress, sessionBuilder.getVersion());
       Optional<Integer> unsignedPreKeyId = sessionBuilder.process(sessionRecord, ciphertext);
       byte[]            plaintext        = decrypt(sessionRecord, ciphertext.getWhisperMessage());
 
@@ -239,7 +241,7 @@ public class SessionCipher {
         throw new NoSessionException("No session for: " + remoteAddress);
       }
 
-      SessionRecord sessionRecord = sessionStore.loadSession(remoteAddress);
+      SessionRecord sessionRecord = sessionStore.loadSession(remoteAddress, sessionBuilder.getVersion());
       byte[]        plaintext     = decrypt(sessionRecord, ciphertext);
 
       if (!identityKeyStore.isTrustedIdentity(remoteAddress, sessionRecord.getSessionState().getRemoteIdentityKey(), IdentityKeyStore.Direction.RECEIVING)) {
@@ -312,7 +314,7 @@ public class SessionCipher {
 
     ciphertextMessage.verifyMac(sessionState.getRemoteIdentityKey(),
                                 sessionState.getLocalIdentityKey(),
-                                messageKeys.getMacKey());
+                                messageKeys.getMacKey(), !sessionState.getLocalIsAlice());
 
     byte[] plaintext = getPlaintext(messageKeys, ciphertextMessage.getBody());
 
@@ -323,7 +325,7 @@ public class SessionCipher {
 
   public int getRemoteRegistrationId() {
     synchronized (SESSION_LOCK) {
-      SessionRecord record = sessionStore.loadSession(remoteAddress);
+      SessionRecord record = sessionStore.loadSession(remoteAddress, sessionBuilder.getVersion());
       return record.getSessionState().getRemoteRegistrationId();
     }
   }
@@ -334,9 +336,17 @@ public class SessionCipher {
         throw new IllegalStateException(String.format("No session for (%s)!", remoteAddress));
       }
 
-      SessionRecord record = sessionStore.loadSession(remoteAddress);
+      SessionRecord record = sessionStore.loadSession(remoteAddress, sessionBuilder.getVersion());
       return record.getSessionState().getSessionVersion();
     }
+  }
+
+  public int getVersion() {
+    return sessionBuilder.getVersion();
+  }
+
+  public void setVersion(int version) {
+    sessionBuilder.setVersion(version);
   }
 
   private ChainKey getOrCreateChainKey(SessionState sessionState, ECPublicKey theirEphemeral)
@@ -348,9 +358,9 @@ public class SessionCipher {
       } else {
         RootKey                 rootKey         = sessionState.getRootKey();
         ECKeyPair               ourEphemeral    = sessionState.getSenderRatchetKeyPair();
-        Pair<RootKey, ChainKey> receiverChain   = rootKey.createChain(theirEphemeral, ourEphemeral);
+        Pair<RootKey, ChainKey> receiverChain   = rootKey.createChain(theirEphemeral, ourEphemeral, sessionState.getSessionVersion() >= 4);
         ECKeyPair               ourNewEphemeral = Curve.generateKeyPair();
-        Pair<RootKey, ChainKey> senderChain     = receiverChain.first().createChain(theirEphemeral, ourNewEphemeral);
+        Pair<RootKey, ChainKey> senderChain     = receiverChain.first().createChain(theirEphemeral, ourNewEphemeral, sessionState.getSessionVersion() >= 4);
 
         sessionState.setRootKey(senderChain.first());
         sessionState.addReceiverChain(theirEphemeral, receiverChain.second());
@@ -383,13 +393,13 @@ public class SessionCipher {
     }
 
     while (chainKey.getIndex() < counter) {
-      MessageKeys messageKeys = chainKey.getMessageKeys();
+      MessageKeys messageKeys = chainKey.getMessageKeys(sessionState.getSessionVersion() >= 4);
       sessionState.setMessageKeys(theirEphemeral, messageKeys);
       chainKey = chainKey.getNextChainKey();
     }
 
     sessionState.setReceiverChainKey(theirEphemeral, chainKey.getNextChainKey());
-    return chainKey.getMessageKeys();
+    return chainKey.getMessageKeys(sessionState.getSessionVersion() >= 4);
   }
 
   private byte[] getCiphertext(MessageKeys messageKeys, byte[] plaintext) {

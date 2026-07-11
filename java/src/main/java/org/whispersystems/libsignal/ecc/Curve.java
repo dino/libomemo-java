@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2013-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -30,8 +31,41 @@ public class Curve {
   public static ECPublicKey decodePoint(byte[] bytes, int offset)
       throws InvalidKeyException
   {
+    if (offset == 0 && bytes.length == 32) {
+      return decodePointEd(bytes, offset);
+    } else if (bytes.length - offset >= 33 && (bytes[offset] & 0xff) == DJB_TYPE) {
+      return decodePointMont(bytes, offset);
+    } else if (bytes.length > offset) {
+      throw new InvalidKeyException("Bad key type: " + (bytes[offset] & 0xff));
+    } else {
+      throw new InvalidKeyException("Format not supported");
+    }
+  }
+
+
+  public static ECPublicKey decodePointEd(byte[] bytes, int offset)
+      throws InvalidKeyException
+  {
+    if (bytes == null || bytes.length - offset < 32) {
+      throw new InvalidKeyException("Bad key length: " + bytes.length);
+    }
+    byte[] edKeyBytes = new byte[32];
+    System.arraycopy(bytes, offset, edKeyBytes, 0, edKeyBytes.length);
+    byte[] montKeyBytes = Curve25519.getInstance(BEST).edToMont(edKeyBytes);
+    return new DjbECPublicKey(montKeyBytes, edKeyBytes);
+  }
+
+  public static ECPublicKey decodePointMont(byte[] bytes, int offset)
+      throws InvalidKeyException
+  {
     if (bytes == null || bytes.length - offset < 1) {
       throw new InvalidKeyException("No key type identifier");
+    }
+
+    if (bytes.length - offset == 32) {
+      byte[] keyBytes = new byte[32];
+      System.arraycopy(bytes, offset, keyBytes, 0, keyBytes.length);
+      return new DjbECPublicKey(keyBytes);
     }
 
     int type = bytes[offset] & 0xFF;
@@ -102,7 +136,7 @@ public class Curve {
 
     if (signingKey.getType() == DJB_TYPE) {
       return Curve25519.getInstance(BEST)
-                       .calculateSignature(((DjbECPrivateKey) signingKey).getPrivateKey(), message);
+                       .calculateXedSignature(((DjbECPrivateKey) signingKey).getPrivateKey(), message);
     } else {
       throw new InvalidKeyException("Unknown type: " + signingKey.getType());
     }

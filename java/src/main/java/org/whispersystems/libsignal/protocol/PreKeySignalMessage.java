@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2014-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -30,6 +31,31 @@ public class PreKeySignalMessage implements CiphertextMessage {
   private final SignalMessage     message;
   private final byte[]            serialized;
 
+  public PreKeySignalMessage(byte[] serialized, int registrationId)
+          throws InvalidMessageException, InvalidVersionException
+  {
+    try {
+      this.version = 4;
+      OMEMOProtos.OMEMOKeyExchange keyExchange = OMEMOProtos.OMEMOKeyExchange.parseFrom(serialized);
+      if (!keyExchange.hasSpkId() ||
+              !keyExchange.hasPkId() ||
+              !keyExchange.hasEk() ||
+              !keyExchange.hasIk() ||
+              !keyExchange.hasMessage()) {
+        throw new InvalidMessageException("Incomplete message.");
+      }
+
+      this.serialized = serialized;
+      this.registrationId = registrationId;
+      this.preKeyId = Optional.of(keyExchange.getPkId());
+      this.signedPreKeyId = keyExchange.getSpkId();
+      this.baseKey = Curve.decodePointMont(keyExchange.getEk().toByteArray(), 0);
+      this.identityKey = new IdentityKey(Curve.decodePoint(keyExchange.getIk().toByteArray(), 0));
+      this.message = new SignalMessage(keyExchange.getMessage().toByteArray(), true);
+    } catch (InvalidProtocolBufferException | InvalidKeyException | LegacyMessageException e) {
+      throw new InvalidMessageException(e);
+    }
+  }
   public PreKeySignalMessage(byte[] serialized)
       throws InvalidMessageException, InvalidVersionException
   {
@@ -44,9 +70,9 @@ public class PreKeySignalMessage implements CiphertextMessage {
         throw new LegacyMessageException("Legacy version: " + this.version);
       }
 
-      SignalProtos.PreKeySignalMessage preKeyWhisperMessage
-          = SignalProtos.PreKeySignalMessage.parseFrom(ByteString.copyFrom(serialized, 1,
-                                                                           serialized.length-1));
+        SignalProtos.PreKeySignalMessage preKeyWhisperMessage
+            = SignalProtos.PreKeySignalMessage.parseFrom(ByteString.copyFrom(serialized, 1,
+                                                                             serialized.length-1));
 
       if (!preKeyWhisperMessage.hasSignedPreKeyId()  ||
           !preKeyWhisperMessage.hasBaseKey()         ||
@@ -62,7 +88,7 @@ public class PreKeySignalMessage implements CiphertextMessage {
       this.signedPreKeyId = preKeyWhisperMessage.hasSignedPreKeyId() ? preKeyWhisperMessage.getSignedPreKeyId() : -1;
       this.baseKey        = Curve.decodePoint(preKeyWhisperMessage.getBaseKey().toByteArray(), 0);
       this.identityKey    = new IdentityKey(Curve.decodePoint(preKeyWhisperMessage.getIdentityKey().toByteArray(), 0));
-      this.message        = new SignalMessage(preKeyWhisperMessage.getMessage().toByteArray());
+      this.message        = new SignalMessage(preKeyWhisperMessage.getMessage().toByteArray(), false);
     } catch (InvalidProtocolBufferException | InvalidKeyException | LegacyMessageException e) {
       throw new InvalidMessageException(e);
     }
@@ -80,22 +106,32 @@ public class PreKeySignalMessage implements CiphertextMessage {
     this.identityKey    = identityKey;
     this.message        = message;
 
-    SignalProtos.PreKeySignalMessage.Builder builder =
-        SignalProtos.PreKeySignalMessage.newBuilder()
-                                        .setSignedPreKeyId(signedPreKeyId)
-                                        .setBaseKey(ByteString.copyFrom(baseKey.serialize()))
-                                        .setIdentityKey(ByteString.copyFrom(identityKey.serialize()))
-                                        .setMessage(ByteString.copyFrom(message.serialize()))
-                                        .setRegistrationId(registrationId);
+    if (messageVersion >= 4) {
+      this.serialized = OMEMOProtos.OMEMOKeyExchange.newBuilder()
+                      .setPkId(preKeyId.get())
+                      .setSpkId(signedPreKeyId)
+                      .setEk(ByteString.copyFrom(baseKey.serialize(), 1, 32))
+                      .setIk(ByteString.copyFrom(identityKey.getPublicKey().serializeEd()))
+                      .setMessage(ByteString.copyFrom(message.serialize()))
+                      .build().toByteArray();
+    } else {
+      SignalProtos.PreKeySignalMessage.Builder builder =
+          SignalProtos.PreKeySignalMessage.newBuilder()
+                                          .setSignedPreKeyId(signedPreKeyId)
+                                          .setBaseKey(ByteString.copyFrom(baseKey.serialize()))
+                                          .setIdentityKey(ByteString.copyFrom(identityKey.serialize()))
+                                          .setMessage(ByteString.copyFrom(message.serialize()))
+                                          .setRegistrationId(registrationId);
 
-    if (preKeyId.isPresent()) {
-      builder.setPreKeyId(preKeyId.get());
+      if (preKeyId.isPresent()) {
+        builder.setPreKeyId(preKeyId.get());
+      }
+
+      byte[] versionBytes = {ByteUtil.intsToByteHighAndLow(this.version, CURRENT_VERSION)};
+      byte[] messageBytes = builder.build().toByteArray();
+
+      this.serialized = ByteUtil.combine(versionBytes, messageBytes);
     }
-
-    byte[] versionBytes = {ByteUtil.intsToByteHighAndLow(this.version, CURRENT_VERSION)};
-    byte[] messageBytes = builder.build().toByteArray();
-
-    this.serialized = ByteUtil.combine(versionBytes, messageBytes);
   }
 
   public int getMessageVersion() {

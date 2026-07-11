@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2014-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -17,6 +18,10 @@ import java.util.List;
  */
 public interface SessionStore {
 
+  default SessionRecord loadSession(SignalProtocolAddress address) {
+    return loadSession(address, 2);
+  }
+
   /**
    * Returns a copy of the {@link SessionRecord} corresponding to the recipientId + deviceId tuple,
    * or a new SessionRecord if one does not currently exist.
@@ -30,7 +35,7 @@ public interface SessionStore {
    * @return a copy of the SessionRecord corresponding to the recipientId + deviceId tuple, or
    *         a new SessionRecord if one does not currently exist.
    */
-  public SessionRecord loadSession(SignalProtocolAddress address);
+  public SessionRecord loadSession(SignalProtocolAddress address, int preferredVersion);
 
   /**
    * Returns all known devices with active sessions for a recipient

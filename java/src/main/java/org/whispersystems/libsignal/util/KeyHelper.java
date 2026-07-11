@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2014-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -106,8 +107,17 @@ public class KeyHelper {
   {
     ECKeyPair keyPair   = Curve.generateKeyPair();
     byte[]    signature = Curve.calculateSignature(identityKeyPair.getPrivateKey(), keyPair.getPublicKey().serialize());
+    byte[]    signature2 = Curve.calculateSignature(identityKeyPair.getPrivateKey(), keyPair.getPublicKey().serialize2());
 
-    return new SignedPreKeyRecord(signedPreKeyId, System.currentTimeMillis(), keyPair, signature);
+    return new SignedPreKeyRecord(signedPreKeyId, System.currentTimeMillis(), keyPair, signature, signature2);
+  }
+
+  public static SignedPreKeyRecord upgradeSignedPreKey(SignedPreKeyRecord signedPreKey, IdentityKeyPair identityKeyPair)
+          throws InvalidKeyException
+  {
+    byte[]    signature2 = Curve.calculateSignature(identityKeyPair.getPrivateKey(), signedPreKey.getKeyPair().getPublicKey().serialize2());
+
+    return new SignedPreKeyRecord(signedPreKey.getId(), signedPreKey.getTimestamp(), signedPreKey.getKeyPair(), signedPreKey.getSignature(), signature2);
   }
 
 

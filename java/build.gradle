@@ -5,26 +5,31 @@ buildscript {
     }
 
     dependencies {
-        classpath 'com.google.protobuf:protobuf-gradle-plugin:0.8.10'
+        classpath 'com.google.protobuf:protobuf-gradle-plugin:0.8.19'
     }
 }
 
 apply plugin: 'java'
 apply plugin: 'com.google.protobuf'
-apply plugin: 'maven'
+apply plugin: 'maven-publish'
 apply plugin: 'signing'
 
-sourceCompatibility = 1.7
-archivesBaseName = "signal-protocol-java"
+sourceCompatibility = 1.8
+archivesBaseName = "omemo-java"
 version          = version_number
 group            = group_info
+description      = 'OMEMO library for Java'
 
 repositories {
     mavenCentral()
-    mavenLocal()
 }
 
 sourceSets {
+    main {
+        java {
+            srcDir 'build/generated/source/proto/main/java'
+        }
+    }
     test {
         java {
             srcDirs = ['src/test/java/', project(':tests').file('src/test/java')]
@@ -33,10 +38,10 @@ sourceSets {
 }
 
 dependencies {
-    compile "org.whispersystems:curve25519-java:${curve25519_version}"
-    compile 'com.google.protobuf:protobuf-javalite:3.10.0'
+    implementation "im.dino:curve25519-java:${curve25519_version}"
+    implementation 'com.google.protobuf:protobuf-javalite:3.10.0'
 
-    testCompile ('junit:junit:3.8.2')
+    testImplementation ('junit:junit:3.8.2')
 }
 
 protobuf {
@@ -85,74 +90,89 @@ def getRepositoryPassword() {
     return hasProperty('whisperSonatypePassword') ? whisperSonatypePassword : ""
 }
 
+/*
 signing {
     required { isReleaseBuild() && gradle.taskGraph.hasTask("uploadArchives") }
     sign configurations.archives
 }
+*/
 
-uploadArchives {
-    configuration = configurations.archives
-    repositories.mavenDeployer {
-        beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
-
-        repository(url: getReleaseRepositoryUrl()) {
-            authentication(userName: getRepositoryUsername(), password: getRepositoryPassword())
-        }
-
-        pom.project {
-            name 'signal-protocol-java'
-            packaging 'jar'
-            description 'Signal Protocol cryptography library for Java'
-            url 'https://github.com/WhisperSystems/libsignal-android'
-
-            scm {
-                url 'scm:git@github.com:WhisperSystems/libsignal-android.git'
-                connection 'scm:git@github.com:WhisperSystems/libsignal-android.git'
-                developerConnection 'scm:git@github.com:WhisperSystems/libsignal-android.git'
-            }
-
-            licenses {
-                license {
-                    name 'GPLv3'
-                    url 'https://www.gnu.org/licenses/gpl-3.0.txt'
-                    distribution 'repo'
-                }
-            }
-
-            developers {
-                developer {
-                    name 'Moxie Marlinspike'
-                }
-            }
-        }
-    }
+task javaSourcesJar(type: Jar) {
+    archiveClassifier.set("sources")
+    from sourceSets.main.allJava
+    dependsOn("generateProto")
 }
 
-task installArchives(type: Upload) {
-    description "Installs the artifacts to the local Maven repository."
-    configuration = configurations['archives']
-    repositories {
-        mavenDeployer {
-            repository url: "file://${System.properties['user.home']}/.m2/repository"
-        }
-    }
+javadoc {
+    classpath = configurations.compileClasspath
+    source = sourceSets.main.allJava
 }
 
-task packageJavadoc(type: Jar, dependsOn: 'javadoc') {
-    from javadoc.destinationDir
-    classifier = 'javadoc'
+task javaJavadocsJar(type: Jar) {
+    archiveClassifier.set("javadoc")
+    from javadoc
 }
 
-task packageSources(type: Jar) {
-    from sourceSets.main.allSource
-    classifier = 'sources'
+tasks.named("javadoc") {
+    dependsOn("generateProto")
 }
 
 artifacts {
-    archives(packageJavadoc) {
-        type = 'javadoc'
-    }
+    archives javaSourcesJar
+    archives javaJavadocsJar
+}
 
-    archives packageSources
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                artifactId = 'omemo-java'
+                pom {
+                    name = 'omemo-java'
+                    description = project.description
+                    url = 'https://github.com/dino/libomemo-java'
+                    licenses {
+                        license {
+                            name = 'GNU General Public License, Version 3'
+                            url = 'https://www.gnu.org/licenses/gpl-3.0.txt'
+                        }
+                    }
+                    developers {
+                        developer {
+                            id = 'dino'
+                            name = 'Dino Team'
+                        }
+                    }
+                    scm {
+                        url = 'https://github.com/dino/libomemo-java'
+                        connection = 'scm:git:https://github.com/dino/libomemo-java.git'
+                        developerConnection = 'scm:git:ssh://github.com/dino/libomemo-java.git'
+                    }
+                }
+
+                from components.java
+                artifact javaSourcesJar
+                artifact javaJavadocsJar
+            }
+        }
+        if (project.hasProperty('maven.central.username')) {
+            repositories {
+                maven {
+                    name = 'mavenCentral'
+                    url = 'https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/'
+                    credentials {
+                        username project.getProperty('maven.central.username')
+                        password project.getProperty('maven.central.password')
+                    }
+                }
+            }
+        }
+    }
+    if (project.hasProperty('signing.gnupg.keyName')) {
+        signing {
+            useGpgCmd()
+            sign publishing.publications
+        }
+    }
 }
 

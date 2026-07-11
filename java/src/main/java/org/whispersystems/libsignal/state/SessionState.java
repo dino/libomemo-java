@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2014-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -66,6 +67,14 @@ public class SessionState {
     this.sessionStructure = this.sessionStructure.toBuilder()
                                                  .setAliceBaseKey(ByteString.copyFrom(aliceBaseKey))
                                                  .build();
+  }
+
+  public void setLocalIsAlice(boolean localIsAlice) {
+    this.sessionStructure = this.sessionStructure.toBuilder().setLocalIsAlice(localIsAlice).build();
+  }
+
+  public boolean getLocalIsAlice() {
+    return this.sessionStructure.getLocalIsAlice();
   }
 
   public void setSessionVersion(int version) {

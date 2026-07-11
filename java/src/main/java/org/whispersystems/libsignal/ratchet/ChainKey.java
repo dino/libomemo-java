@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2014-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -8,6 +9,7 @@ package org.whispersystems.libsignal.ratchet;
 
 import org.whispersystems.libsignal.kdf.DerivedMessageSecrets;
 import org.whispersystems.libsignal.kdf.HKDF;
+import org.whispersystems.libsignal.util.Hex;
 
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
@@ -44,8 +46,12 @@ public class ChainKey {
   }
 
   public MessageKeys getMessageKeys() {
+    return getMessageKeys(false);
+  }
+
+  public MessageKeys getMessageKeys(boolean version2) {
     byte[]                inputKeyMaterial = getBaseMaterial(MESSAGE_KEY_SEED);
-    byte[]                keyMaterialBytes = kdf.deriveSecrets(inputKeyMaterial, "WhisperMessageKeys".getBytes(), DerivedMessageSecrets.SIZE);
+    byte[]                keyMaterialBytes = kdf.deriveSecrets(inputKeyMaterial, (version2 ? "OMEMO Message Key Material" : "WhisperMessageKeys").getBytes(), DerivedMessageSecrets.SIZE);
     DerivedMessageSecrets keyMaterial      = new DerivedMessageSecrets(keyMaterialBytes);
 
     return new MessageKeys(keyMaterial.getCipherKey(), keyMaterial.getMacKey(), keyMaterial.getIv(), index);

@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2014-2016 Open Whisper Systems
+ * Copyright (c) 2026 Dino Team
  *
  * Licensed according to the LICENSE file in this repository.
  */
@@ -30,6 +31,11 @@ public class SessionRecord {
     this.fresh = true;
   }
 
+  public SessionRecord(int version) {
+    this.fresh = true;
+    this.sessionState.setSessionVersion(version);
+  }
+
   public SessionRecord(SessionState sessionState) {
     this.sessionState = sessionState;
     this.fresh        = false;
@@ -43,6 +49,14 @@ public class SessionRecord {
     for (SessionStructure previousStructure : record.getPreviousSessionsList()) {
       previousStates.add(new SessionState(previousStructure));
     }
+  }
+
+  public int getVersion() {
+    return sessionState.getSessionVersion();
+  }
+
+  public void setVersion(int version) {
+    sessionState.setSessionVersion(version);
   }
 
   public boolean hasSessionState(int version, byte[] aliceBaseKey) {
